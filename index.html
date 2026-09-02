@@ -203,6 +203,55 @@
   .party-row .mini-bar{flex:1;height:8px;border-radius:20px;overflow:hidden;background:var(--paper-dim);display:flex;}
   .party-row .counts{width:110px;text-align:right;color:#847c69;font-size:12.5px;flex-shrink:0;}
 
+  /* ---------- Hemiciclo (curules) ---------- */
+  .hemiciclo-box{
+    margin-top:14px;padding:18px 18px 14px 18px;background:var(--paper-dim);
+    border-radius:var(--radius);
+  }
+  .hemiciclo-mayoria{
+    text-align:center;font-size:12.5px;font-weight:600;color:var(--abst);
+    margin-bottom:2px;
+  }
+  .hemiciclo-svg{width:100%;height:auto;display:block;max-height:300px;}
+  .hemiciclo-linea-mayoria{stroke:var(--abst);stroke-width:1.5;stroke-dasharray:5,4;}
+  .seat{
+    cursor:pointer;stroke-width:3px;transition:stroke-width .12s,filter .12s,opacity .12s;
+    outline:none;
+  }
+  .seat-si{stroke:var(--si);}
+  .seat-no{stroke:var(--no);}
+  .seat-abstencion{stroke:var(--abst);}
+  .seat-pendiente{stroke:#b6ae9c;stroke-dasharray:2.5,2.5;opacity:.5;}
+  .seat:hover,.seat:focus,.seat.selected{
+    stroke-width:5px;filter:drop-shadow(0 1px 4px rgba(21,19,15,.35));opacity:1;
+  }
+  .hemiciclo-detalle{
+    min-height:34px;margin-top:6px;padding:8px 12px;background:#fff;border:1px solid var(--line);
+    border-radius:2px;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .hemiciclo-hint{color:#96907e;font-size:12.5px;}
+  .detalle-partido{color:#655e4d;font-size:12.5px;}
+  .detalle-voto{
+    margin-left:auto;font-weight:600;font-size:12px;padding:3px 9px;border-radius:20px;
+  }
+  .detalle-voto.voto-si{background:#e9f4ee;color:var(--si);}
+  .detalle-voto.voto-no{background:#fbeaed;color:var(--no);}
+  .detalle-voto.voto-abstencion{background:#fbf1de;color:var(--abst);}
+  .detalle-voto.voto-pendiente{background:#efe9da;color:#6b6248;}
+  .hemiciclo-leyenda{
+    display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:12px;
+    font-size:12px;color:#655e4d;
+  }
+  .leyenda-item{display:flex;align-items:center;gap:5px;}
+  .leyenda-anillo{
+    width:11px;height:11px;border-radius:50%;background:#fff;border:2.5px solid;
+    display:inline-block;
+  }
+  .leyenda-anillo.si{border-color:var(--si);}
+  .leyenda-anillo.no{border-color:var(--no);}
+  .leyenda-anillo.abstencion{border-color:var(--abst);}
+  .leyenda-anillo.pendiente{border-color:#b6ae9c;border-style:dashed;}
+
   .empty{
     text-align:center;padding:48px 20px;color:#96907e;
   }
@@ -734,8 +783,152 @@ async function loadResultados(){
       ${barHtml}
       <div class="doc-meta"><span>${total} de ${totalCongresistas} congresistas votaron${noVotaron>0 ? ' · '+noVotaron+' pendientes' : ''}</span></div>
       ${partidosHtml ? `<div class="section-title">Por partido</div>${partidosHtml}` : ''}
+      <div class="section-title">Por curul</div>
+      <div id="hemi-${p.id}"></div>
     `;
     el.appendChild(div);
+    renderHemiciclo(`hemi-${p.id}`, congresistas || [], votosProyecto, p.tipo_voto);
+  });
+}
+
+/* ---------------------------- HEMICICLO (voto por curul) ---------------------------- */
+
+// Calcula la posición (x, y) de cada curul distribuido en un semicírculo,
+// en filas concéntricas, para n congresistas.
+function hemicicloPuntos(n, opts = {}){
+  const cx = opts.cx ?? 350, cy = opts.cy ?? 315;
+  const rMin = opts.rMin ?? 68, rMax = opts.rMax ?? 285;
+  const minSeatR = 4.5;
+  let seatR = opts.seatR ?? 15;
+
+  function calcular(seatRadius){
+    const espacioFila = seatRadius * 2 + 6;
+    const numFilas = Math.max(1, Math.floor((rMax - rMin) / espacioFila) + 1);
+    const filas = [];
+    for(let i = 0; i < numFilas; i++){
+      const r = numFilas === 1 ? rMax : rMin + i * (rMax - rMin) / (numFilas - 1);
+      const anguloPaso = 2 * Math.asin(Math.min(1, (seatRadius * 2 + 3) / (2 * r)));
+      const cap = Math.max(1, Math.floor(Math.PI / anguloPaso) + 1);
+      filas.push({ r, cap });
+    }
+    return { filas, total: filas.reduce((s, f) => s + f.cap, 0) };
+  }
+
+  let resultado = calcular(seatR);
+  while(resultado.total < n && seatR > minSeatR){
+    seatR -= 0.5;
+    resultado = calcular(seatR);
+  }
+
+  const { filas } = resultado;
+  const total = filas.reduce((s, f) => s + f.cap, 0);
+  let asignados = filas.map(f => Math.max(1, Math.round(n * f.cap / total)));
+  let diff = n - asignados.reduce((a, b) => a + b, 0);
+  let idx = asignados.length - 1;
+  let guard = 0;
+  while(diff !== 0 && guard < 10000){
+    if(diff > 0){ asignados[idx]++; diff--; }
+    else if(asignados[idx] > 1){ asignados[idx]--; diff++; }
+    idx = (idx - 1 + asignados.length) % asignados.length;
+    guard++;
+  }
+
+  const puntos = [];
+  filas.forEach((f, i) => {
+    const k = asignados[i];
+    for(let j = 0; j < k; j++){
+      const t = k === 1 ? 0.5 : j / (k - 1);
+      const angulo = Math.PI - t * Math.PI;
+      puntos.push({
+        x: cx + f.r * Math.cos(angulo),
+        y: cy - f.r * Math.sin(angulo),
+        angulo, seatR
+      });
+    }
+  });
+  puntos.sort((a, b) => b.angulo - a.angulo); // izquierda (180°) a derecha (0°)
+  return puntos;
+}
+
+function votoEtiqueta(voto){
+  if(voto === 'si') return 'Votó Sí';
+  if(voto === 'no') return 'Votó No';
+  if(voto === 'abstencion') return 'Se abstuvo';
+  return 'Aún no ha votado';
+}
+
+// Dibuja el hemiciclo: cada curul es un congresista real, coloreado por partido,
+// con un anillo que indica su voto. Al pasar el cursor o tocar un curul se ve el detalle.
+function renderHemiciclo(containerId, congresistas, votosProyecto, tipoVoto){
+  const cont = document.getElementById(containerId);
+  if(!cont) return;
+  const n = (congresistas || []).length;
+  if(n === 0){
+    cont.innerHTML = '<div class="empty" style="padding:20px;">No hay congresistas registrados.</div>';
+    return;
+  }
+
+  // Se agrupan por partido (y luego por nombre) para que cada bancada quede contigua en el arco.
+  const ordenados = congresistas.slice().sort((a, b) => {
+    const pa = (a.partidos && a.partidos.nombre) || 'zzz-sin-partido';
+    const pb = (b.partidos && b.partidos.nombre) || 'zzz-sin-partido';
+    if(pa !== pb) return pa.localeCompare(pb);
+    return (a.nombre || '').localeCompare(b.nombre || '');
+  });
+
+  const votoPorCongresista = {};
+  (votosProyecto || []).forEach(v => { votoPorCongresista[v.congresista_id] = v.voto; });
+
+  const puntos = hemicicloPuntos(n);
+  const seatR = puntos.length ? puntos[0].seatR : 12;
+  const mayoria = Math.floor(n / 2) + 1;
+
+  const svgSeats = ordenados.map((c, i) => {
+    const pt = puntos[i];
+    if(!pt) return '';
+    const voto = votoPorCongresista[c.id] || 'pendiente';
+    const partido = c.partidos;
+    const color = (partido && partido.color) || '#9a9284';
+    const nombreEsc = escapeHtml(c.nombre || '');
+    const partidoEsc = escapeHtml((partido && partido.nombre) || 'Sin partido');
+    return `<circle class="seat seat-${voto}" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="${Math.max(2, seatR - 1.5).toFixed(1)}"
+      style="fill:${color}" tabindex="0"
+      data-nombre="${nombreEsc}" data-partido="${partidoEsc}" data-voto="${voto}"><title>${nombreEsc} — ${partidoEsc} — ${votoEtiqueta(voto)}</title></circle>`;
+  }).join('');
+
+  cont.innerHTML = `
+    <div class="hemiciclo-box">
+      <div class="hemiciclo-mayoria">Mayoría: ${mayoria}</div>
+      <svg viewBox="0 0 700 320" class="hemiciclo-svg" role="img" aria-label="Diagrama de curules por voto">
+        <line x1="350" y1="25" x2="350" y2="315" class="hemiciclo-linea-mayoria"/>
+        ${svgSeats}
+      </svg>
+      <div class="hemiciclo-detalle" id="${containerId}-detalle">
+        <span class="hemiciclo-hint">Pasa el cursor (o toca en móvil) sobre un curul para ver quién es y cómo votó</span>
+      </div>
+      <div class="hemiciclo-leyenda">
+        <span class="leyenda-item"><span class="leyenda-anillo si"></span>Sí</span>
+        <span class="leyenda-item"><span class="leyenda-anillo no"></span>No</span>
+        ${tipoVoto === 'nominal' ? `<span class="leyenda-item"><span class="leyenda-anillo abstencion"></span>Abstención</span>` : ''}
+        <span class="leyenda-item"><span class="leyenda-anillo pendiente"></span>No ha votado</span>
+      </div>
+    </div>
+  `;
+
+  const detalle = document.getElementById(`${containerId}-detalle`);
+  cont.querySelectorAll('.seat').forEach(seat => {
+    const mostrarDetalle = () => {
+      detalle.innerHTML = `<strong>${seat.dataset.nombre}</strong>
+        <span class="detalle-partido">${seat.dataset.partido}</span>
+        <span class="detalle-voto voto-${seat.dataset.voto}">${votoEtiqueta(seat.dataset.voto)}</span>`;
+    };
+    seat.addEventListener('mouseenter', mostrarDetalle);
+    seat.addEventListener('focus', mostrarDetalle);
+    seat.addEventListener('click', () => {
+      cont.querySelectorAll('.seat.selected').forEach(s => s.classList.remove('selected'));
+      seat.classList.add('selected');
+      mostrarDetalle();
+    });
   });
 }
 
