@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Congreso Participativo — Votación de proyectos de ley</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#15130f;
+    --paper:#ffffff;
+    --paper-dim:#f3f1ea;
+    --line:#e3ddd0;
+    --dark:#15130f;
+    --dark-2:#252019;
+    --brand:#ff1f45;
+    --brand-dark:#c9102f;
+    --si:#158049;
+    --no:#a81e38;
+    --abst:#b8860b;
+    --radius:2px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  h3{font-family:'IBM Plex Sans',sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  /* ---------- Wordmark / seal ---------- */
+  .seal{
+    width:36px;height:36px;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+    font-family:'Anton',sans-serif;font-size:15px;letter-spacing:.5px;border-radius:5px;
+  }
+  .seal.lg{width:54px;height:54px;font-size:21px;border-radius:7px;margin:0 auto 20px auto;}
+  .wordmark .top{
+    display:block;font-family:'IBM Plex Sans',sans-serif;font-weight:600;
+    font-size:11px;letter-spacing:2.5px;color:var(--ink);
+  }
+  .wordmark .bottom{
+    display:block;font-family:'Anton',sans-serif;color:var(--brand);
+    font-size:22px;line-height:.85;letter-spacing:.3px;margin-top:2px;
+  }
+
+  /* ---------- Layout shell ---------- */
+  #app{display:none;min-height:100vh;grid-template-columns:230px 1fr;}
+  #app.active{display:grid;}
+
+  aside{
+    background:var(--dark);
+    color:var(--paper);
+    padding:28px 0;
+    display:flex;
+    flex-direction:column;
+  }
+  .brand{
+    padding:0 24px 22px 24px;
+    border-bottom:1px solid rgba(255,255,255,0.12);
+    margin-bottom:18px;
+    display:flex;align-items:flex-start;gap:10px;
+  }
+  .brand .wordmark .top{color:#9d968a;}
+  .brand .wordmark .bottom{font-size:19px;}
+
+  nav.tabs{display:flex;flex-direction:column;gap:1px;padding:0 12px;flex:1;}
+  nav.tabs button{
+    background:none;border:none;text-align:left;color:#c9c3b7;
+    padding:11px 12px;font-size:14px;font-family:'IBM Plex Sans',sans-serif;
+    cursor:pointer;border-radius:2px;transition:background .15s,color .15s;
+  }
+  nav.tabs button:hover{background:rgba(255,255,255,0.06);color:#fff;}
+  nav.tabs button.active{background:var(--brand);color:#fff;font-weight:600;}
+  nav.tabs .group-label{
+    font-size:11px;color:#786f60;margin:16px 12px 4px 12px;
+    text-transform:none;
+  }
+
+  .who{
+    padding:16px 24px;border-top:1px solid rgba(255,255,255,0.12);
+    font-size:13px;color:#9d968a;
+  }
+  .who strong{color:var(--paper);display:block;font-size:14px;margin-bottom:2px;}
+  .who button{
+    margin-top:10px;background:none;border:1px solid rgba(255,255,255,0.22);
+    color:#c9c3b7;padding:6px 10px;font-size:12.5px;border-radius:2px;cursor:pointer;
+  }
+  .who button:hover{border-color:var(--brand);color:#fff;}
+
+  main{padding:36px 44px;max-width:980px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .page-head{margin-bottom:26px;}
+  .page-head h2{
+    font-family:'Anton',sans-serif;font-weight:400;font-size:30px;letter-spacing:.3px;
+    margin:0 0 4px 0;color:var(--ink);
+  }
+  .page-head p{margin:0;color:#655e4d;font-size:14px;}
+
+  /* ---------- Cards / document panels ---------- */
+  .doc{
+    background:#fff;
+    border:1px solid var(--line);
+    border-left:3px solid var(--brand);
+    border-radius:var(--radius);
+    padding:22px 24px;
+    margin-bottom:16px;
+  }
+  .doc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:8px;}
+  .doc-head h3{margin:0;font-size:18px;font-weight:600;}
+  .doc-code{color:var(--brand-dark);font-size:12.5px;font-family:'IBM Plex Mono',monospace;margin-bottom:6px;}
+  .doc-desc{color:#4f4838;font-size:14px;margin:8px 0 0 0;}
+  .badge{
+    display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;
+    font-weight:500;white-space:nowrap;
+  }
+  .badge.borrador{background:#efe9da;color:#6b6248;}
+  .badge.abierto{background:#e3f0e8;color:var(--si);}
+  .badge.cerrado{background:#f6dfe3;color:var(--no);}
+
+  .doc-meta{display:flex;gap:14px;margin-top:12px;font-size:12.5px;color:#847c69;}
+
+  /* ---------- Buttons ---------- */
+  button.btn{
+    font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;font-weight:600;
+    padding:9px 16px;border-radius:2px;border:1px solid var(--brand);
+    background:var(--brand);color:#fff;cursor:pointer;
+  }
+  button.btn:hover{background:var(--brand-dark);border-color:var(--brand-dark);}
+  button.btn.ghost{background:none;color:var(--ink);border-color:var(--line);}
+  button.btn.ghost:hover{background:var(--paper-dim);}
+  button.btn.danger{background:#fff;color:var(--no);border-color:#e3c3cb;}
+  button.btn.danger:hover{background:#fcf0f2;}
+  button.btn.small{padding:5px 11px;font-size:12.5px;}
+  button.btn[disabled]{opacity:.45;cursor:not-allowed;}
+  .btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+
+  /* ---------- Vote buttons ---------- */
+  .vote-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .vote-btn{
+    flex:1;min-width:110px;padding:13px 10px;border-radius:2px;cursor:pointer;
+    font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:14px;
+    border:1.5px solid var(--line);background:#fff;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  .vote-btn:hover{border-color:currentColor;}
+  .vote-btn.si{color:var(--si);}
+  .vote-btn.no{color:var(--no);}
+  .vote-btn.abstencion{color:var(--abst);}
+  .vote-btn.selected.si{background:var(--si);color:#fff;border-color:var(--si);}
+  .vote-btn.selected.no{background:var(--no);color:#fff;border-color:var(--no);}
+  .vote-btn.selected.abstencion{background:var(--abst);color:#fff;border-color:var(--abst);}
+  .current-vote{margin-top:12px;font-size:13px;color:#655e4d;}
+  .current-vote strong{color:var(--ink);}
+
+  /* ---------- Forms ---------- */
+  label{display:block;font-size:12.5px;color:#655e4d;margin:12px 0 5px 0;font-weight:500;}
+  label:first-child{margin-top:0;}
+  input[type=text],input[type=password],select,textarea{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:2px;
+    font-family:'IBM Plex Sans',sans-serif;font-size:14px;background:#fff;color:var(--ink);
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px;}
+  textarea{resize:vertical;min-height:70px;}
+  .radio-group{display:flex;gap:16px;margin-top:6px;}
+  .radio-group label{display:flex;align-items:center;gap:6px;font-weight:400;margin:0;font-size:14px;color:var(--ink);}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+  /* ---------- Tables ---------- */
+  table{width:100%;border-collapse:collapse;margin-top:8px;}
+  th{
+    text-align:left;font-size:12px;font-weight:600;color:#847c69;
+    padding:8px 10px;border-bottom:1.5px solid var(--line);
+  }
+  td{padding:9px 10px;border-bottom:1px solid var(--paper-dim);font-size:14px;}
+  tr:last-child td{border-bottom:none;}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle;}
+
+  /* ---------- Results ---------- */
+  .tally{display:flex;gap:22px;margin:16px 0 6px 0;}
+  .tally-item{flex:1;text-align:center;padding:14px 8px;border-radius:2px;background:var(--paper-dim);}
+  .tally-item .n{font-family:'Anton',sans-serif;font-size:32px;font-weight:400;display:block;}
+  .tally-item .lbl{font-size:12.5px;color:#847c69;}
+  .tally-item.si .n{color:var(--si);}
+  .tally-item.no .n{color:var(--no);}
+  .tally-item.abstencion .n{color:var(--abst);}
+  .bar-outer{height:10px;background:var(--paper-dim);border-radius:20px;overflow:hidden;display:flex;margin:14px 0 4px 0;}
+  .bar-seg.si{background:var(--si);}
+  .bar-seg.no{background:var(--no);}
+  .bar-seg.abstencion{background:var(--abst);}
+  .party-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--paper-dim);font-size:13.5px;}
+  .party-row:last-child{border-bottom:none;}
+  .party-row .name{width:150px;flex-shrink:0;}
+  .party-row .mini-bar{flex:1;height:8px;border-radius:20px;overflow:hidden;background:var(--paper-dim);display:flex;}
+  .party-row .counts{width:110px;text-align:right;color:#847c69;font-size:12.5px;flex-shrink:0;}
+
+  .empty{
+    text-align:center;padding:48px 20px;color:#96907e;
+  }
+  .empty h3{color:#655e4d;margin-bottom:6px;font-weight:600;font-size:16px;}
+
+  .section-title{font-size:14px;font-weight:600;margin:26px 0 8px 0;color:var(--ink);}
+  .section-title:first-child{margin-top:0;}
+
+  .msg{
+    padding:10px 13px;border-radius:2px;font-size:13.5px;margin-bottom:14px;
+  }
+  .msg.error{background:#fbeaed;color:var(--no);border:1px solid #edc3cc;}
+  .msg.ok{background:#e9f4ee;color:var(--si);border:1px solid #c3ddcd;}
+
+  /* ---------- Login screen ---------- */
+  #login-screen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:var(--dark);
+    background-image:radial-gradient(circle at 25% 15%, rgba(255,31,69,0.14), transparent 45%);
+    padding:20px;
+  }
+  .login-box{
+    background:var(--paper);width:100%;max-width:390px;padding:38px 34px;
+    border-radius:2px;border-top:3px solid var(--brand);
+  }
+  .login-box .wordmark{text-align:center;margin-bottom:22px;}
+  .login-box .wordmark .top{letter-spacing:3px;}
+  .login-box .wordmark .bottom{font-size:30px;}
+  .login-box p.sub{text-align:center;color:#847c69;font-size:13px;margin:0 0 26px 0;}
+  .login-box button.btn{width:100%;margin-top:18px;padding:11px;}
+  .login-hint{font-size:12px;color:#a39c8a;text-align:center;margin-top:16px;}
+
+  #config-screen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:var(--dark);padding:20px;
+  }
+  .config-box{
+    background:var(--paper);max-width:520px;width:100%;padding:32px;border-radius:2px;
+    border-top:3px solid var(--brand);
+  }
+  .config-box h1{font-size:19px;margin:0 0 10px 0;font-family:'IBM Plex Sans',sans-serif;font-weight:600;}
+  .config-box p{font-size:13.5px;color:#4f4838;line-height:1.6;}
+  .config-box code{background:var(--paper-dim);padding:1px 5px;border-radius:2px;font-size:12.5px;}
+
+  @media(max-width:760px){
+    #app.active{grid-template-columns:1fr;}
+    aside{flex-direction:row;overflow-x:auto;padding:14px;align-items:center;}
+    .brand{border:none;padding:0 14px 0 0;margin:0;}
+    .brand .wordmark .top{display:none;}
+    .brand .wordmark .bottom{font-size:16px;}
+    nav.tabs{flex-direction:row;padding:0;}
+    .group-label{display:none;}
+    .who{display:none;}
+    main{padding:22px;}
+    .field-row{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================= CONFIG SCREEN ============================= -->
+<div id="config-screen">
+  <div class="config-box">
+    <h1>Configuración requerida</h1>
+    <p>Esta aplicación necesita conectarse a tu proyecto de Supabase antes de poder usarse.</p>
+    <p>1. Abre <code>index.html</code> con un editor de texto y busca la constante <code>SUPABASE_URL</code> y <code>SUPABASE_ANON_KEY</code> cerca del inicio del bloque <code>&lt;script&gt;</code>.</p>
+    <p>2. Reemplázalas con la URL y la clave <em>anon/public</em> de tu proyecto (Supabase Dashboard → Project Settings → API).</p>
+    <p>3. Ejecuta el archivo <code>schema.sql</code> incluido en el editor SQL de Supabase (SQL Editor → New query) para crear las tablas y funciones necesarias.</p>
+    <p>4. Recarga esta página. El usuario inicial es <code>admin</code> / <code>admin123</code> — cámbialo de inmediato desde el panel de Usuarios.</p>
+  </div>
+</div>
+
+<!-- ============================= LOGIN SCREEN ============================= -->
+<div id="login-screen" style="display:none;">
+  <div class="login-box">
+    <div class="wordmark">
+      <span class="top">CONGRESO</span>
+      <span class="bottom">PARTICIPATIVO</span>
+    </div>
+    <p class="sub">Acceso para congresistas y administración</p>
+    <div id="login-msg"></div>
+    <label for="li-user">Usuario</label>
+    <input type="text" id="li-user" autocomplete="username">
+    <label for="li-pass">Contraseña</label>
+    <input type="password" id="li-pass" autocomplete="current-password">
+    <button class="btn" id="btn-login">Ingresar</button>
+    <p class="login-hint">Acceso restringido a usuarios registrados por la administración</p>
+  </div>
+</div>
+
+<!-- ============================= APP SHELL ============================= -->
+<div id="app">
+  <aside>
+    <div class="brand">
+      <div class="seal">CP</div>
+      <div class="wordmark">
+        <span class="top">CONGRESO</span>
+        <span class="bottom">PARTICIPATIVO</span>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-view="votacion" class="active">Proyectos y votación</button>
+      <button data-view="resultados">Resultados</button>
+      <div class="group-label" id="admin-label" style="display:none;">Administración</div>
+      <button data-view="admin-proyectos" class="admin-only" style="display:none;">Gestionar proyectos</button>
+      <button data-view="admin-partidos" class="admin-only" style="display:none;">Partidos</button>
+      <button data-view="admin-congresistas" class="admin-only" style="display:none;">Congresistas</button>
+      <button data-view="admin-usuarios" class="admin-only" style="display:none;">Usuarios</button>
+    </nav>
+    <div class="who">
+      <strong id="who-name">—</strong>
+      <span id="who-role">—</span>
+      <button id="btn-logout">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- ---------- VOTACIÓN ---------- -->
+    <section class="view active" id="view-votacion">
+      <div class="page-head">
+        <h2>Proyectos de ley</h2>
+        <p>Proyectos abiertos a votación y su estado actual</p>
+      </div>
+      <div id="votacion-msg"></div>
+      <div id="lista-votacion"><div class="empty">Cargando…</div></div>
+    </section>
+
+    <!-- ---------- RESULTADOS ---------- -->
+    <section class="view" id="view-resultados">
+      <div class="page-head">
+        <h2>Resultados</h2>
+        <p>Conteo de votos por proyecto de ley, con desglose por partido</p>
+      </div>
+      <div id="lista-resultados"><div class="empty">Cargando…</div></div>
+    </section>
+
+    <!-- ---------- ADMIN: PROYECTOS ---------- -->
+    <section class="view" id="view-admin-proyectos">
+      <div class="page-head">
+        <h2>Gestionar proyectos de ley</h2>
+        <p>Crear proyectos, definir el tipo de voto y controlar cuándo se abre o cierra la votación</p>
+      </div>
+      <div id="admin-proy-msg"></div>
+      <div class="doc">
+        <div class="section-title">Nuevo proyecto de ley</div>
+        <div class="field-row">
+          <div>
+            <label for="np-codigo">Código</label>
+            <input type="text" id="np-codigo" placeholder="P.L. 014-2026">
+          </div>
+          <div>
+            <label for="np-tipo">Tipo de voto</label>
+            <select id="np-tipo">
+              <option value="estandar">Estándar (sí / no)</option>
+              <option value="nominal">Nominal (sí / no / me abstengo)</option>
+            </select>
+          </div>
+        </div>
+        <label for="np-titulo">Título</label>
+        <input type="text" id="np-titulo" placeholder="Ley de...">
+        <label for="np-desc">Descripción</label>
+        <textarea id="np-desc" placeholder="Resumen del contenido del proyecto"></textarea>
+        <div class="btn-row"><button class="btn" id="btn-crear-proyecto">Crear proyecto</button></div>
+      </div>
+      <div class="section-title">Proyectos existentes</div>
+      <div id="admin-lista-proyectos"><div class="empty">Cargando…</div></div>
+    </section>
+
+    <!-- ---------- ADMIN: PARTIDOS ---------- -->
+    <section class="view" id="view-admin-partidos">
+      <div class="page-head">
+        <h2>Partidos políticos</h2>
+        <p>Registrar y editar los partidos a los que pertenecen los congresistas</p>
+      </div>
+      <div id="admin-partidos-msg"></div>
+      <div class="doc">
+        <div class="section-title">Nuevo partido</div>
+        <div class="field-row">
+          <div>
+            <label for="pp-nombre">Nombre</label>
+            <input type="text" id="pp-nombre" placeholder="Partido Nacional">
+          </div>
+          <div>
+            <label for="pp-siglas">Siglas</label>
+            <input type="text" id="pp-siglas" placeholder="PN">
+          </div>
+        </div>
+        <label for="pp-color">Color identificativo</label>
+        <input type="color" id="pp-color" value="#8A6D3B" style="width:70px;padding:2px;height:38px;">
+        <div class="btn-row"><button class="btn" id="btn-crear-partido">Registrar partido</button></div>
+      </div>
+      <div class="section-title">Partidos registrados</div>
+      <div class="doc"><table id="tabla-partidos"><thead><tr><th>Partido</th><th>Siglas</th><th></th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <!-- ---------- ADMIN: CONGRESISTAS ---------- -->
+    <section class="view" id="view-admin-congresistas">
+      <div class="page-head">
+        <h2>Congresistas</h2>
+        <p>Registrar congresistas y asignarlos a un partido</p>
+      </div>
+      <div id="admin-congresistas-msg"></div>
+      <div class="doc">
+        <div class="section-title">Nuevo congresista</div>
+        <div class="field-row">
+          <div>
+            <label for="cc-nombre">Nombre completo</label>
+            <input type="text" id="cc-nombre" placeholder="Nombre y apellido">
+          </div>
+          <div>
+            <label for="cc-partido">Partido</label>
+            <select id="cc-partido"></select>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn" id="btn-crear-congresista">Registrar congresista</button></div>
+      </div>
+      <div class="section-title">Congresistas registrados</div>
+      <div class="doc"><table id="tabla-congresistas"><thead><tr><th>Nombre</th><th>Partido</th><th>Estado</th><th></th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <!-- ---------- ADMIN: USUARIOS ---------- -->
+    <section class="view" id="view-admin-usuarios">
+      <div class="page-head">
+        <h2>Usuarios</h2>
+        <p>Cuentas de acceso (usuario y contraseña) vinculadas a cada congresista</p>
+      </div>
+      <div id="admin-usuarios-msg"></div>
+      <div class="doc">
+        <div class="section-title">Nuevo usuario</div>
+        <div class="field-row">
+          <div>
+            <label for="uu-username">Usuario</label>
+            <input type="text" id="uu-username" placeholder="jperez">
+          </div>
+          <div>
+            <label for="uu-password">Contraseña</label>
+            <input type="password" id="uu-password" placeholder="mínimo 8 caracteres">
+          </div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label for="uu-congresista">Congresista asociado</label>
+            <select id="uu-congresista"><option value="">— Sin asociar (solo admin) —</option></select>
+          </div>
+          <div>
+            <label for="uu-rol">Rol</label>
+            <select id="uu-rol">
+              <option value="congresista">Congresista</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn" id="btn-crear-usuario">Crear usuario</button></div>
+      </div>
+      <div class="section-title">Usuarios registrados</div>
+      <div class="doc"><table id="tabla-usuarios"><thead><tr><th>Usuario</th><th>Rol</th><th>Congresista</th><th></th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ============================================================================
+   CONFIGURACIÓN — reemplaza estos dos valores con los de tu proyecto Supabase
+   (Dashboard → Project Settings → API). No uses la "service_role key" aquí,
+   solo la "anon public key".
+   ============================================================================ */
+const SUPABASE_URL = "https://qnxjqbvjryfhjbeeflat.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFueGpxYnZqcnlmaGpiZWVmbGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTMzNTEsImV4cCI6MjEwMzg2OTM1MX0.J1H7TAuc0mcTyC9m3q2uparx9cqaSE29gwMaCNesl9A";
+
+/* ========================================================================== */
+
+let db = null;
+let session = null; // { username, password, id, rol, congresista_id, congresista_nombre, partido_nombre, partido_color }
+
+function isConfigured(){
+  return SUPABASE_URL.indexOf("TU-PROYECTO") === -1 && SUPABASE_ANON_KEY.indexOf("TU-ANON-KEY") === -1;
+}
+
+function initApp(){
+  if(!isConfigured()){
+    document.getElementById('config-screen').style.display = 'flex';
+    return;
+  }
+  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const saved = sessionStorage.getItem('votacion_session');
+  if(saved){
+    try{
+      session = JSON.parse(saved);
+      showApp();
+    }catch(e){ showLogin(); }
+  } else {
+    showLogin();
+  }
+
+  bindEvents();
+}
+
+function showLogin(){
+  document.getElementById('config-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').classList.remove('active');
+}
+
+function showApp(){
+  document.getElementById('config-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.add('active');
+  document.getElementById('who-name').textContent = session.congresista_nombre || session.username;
+  document.getElementById('who-role').textContent = session.rol === 'admin' ? 'Administrador' : 'Congresista' + (session.partido_nombre ? ' — ' + session.partido_nombre : '');
+  const isAdmin = session.rol === 'admin';
+  document.getElementById('admin-label').style.display = isAdmin ? 'block' : 'none';
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'block' : 'none');
+  loadVotacion();
+  loadResultados();
+  if(isAdmin){
+    loadAdminProyectos();
+    loadAdminPartidos();
+    loadAdminCongresistas();
+    loadAdminUsuarios();
+  }
+}
+
+function msgBox(containerId, text, type){
+  const c = document.getElementById(containerId);
+  c.innerHTML = `<div class="msg ${type}">${escapeHtml(text)}</div>`;
+  setTimeout(()=>{ if(c.firstChild && c.firstChild.textContent === text) c.innerHTML = ''; }, 5000);
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function friendlyError(err){
+  if(!err) return 'Ocurrió un error inesperado';
+  const m = err.message || String(err);
+  return m.replace(/^.*?:\s*/,'').trim() || 'Ocurrió un error inesperado';
+}
+
+/* ---------------------------- AUTH ---------------------------- */
+
+async function doLogin(){
+  const username = document.getElementById('li-user').value.trim();
+  const password = document.getElementById('li-pass').value;
+  if(!username || !password){
+    msgBox('login-msg', 'Ingresa usuario y contraseña', 'error');
+    return;
+  }
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true; btn.textContent = 'Verificando…';
+  const { data, error } = await db.rpc('fn_login', { p_username: username, p_password: password });
+  btn.disabled = false; btn.textContent = 'Ingresar';
+  if(error || !data || !data.length){
+    msgBox('login-msg', 'Usuario o contraseña incorrectos', 'error');
+    return;
+  }
+  const row = data[0];
+  session = {
+    username, password,
+    id: row.id, rol: row.rol,
+    congresista_id: row.congresista_id,
+    congresista_nombre: row.congresista_nombre,
+    partido_id: row.partido_id,
+    partido_nombre: row.partido_nombre,
+    partido_color: row.partido_color
+  };
+  sessionStorage.setItem('votacion_session', JSON.stringify(session));
+  document.getElementById('li-pass').value = '';
+  showApp();
+}
+
+function doLogout(){
+  session = null;
+  sessionStorage.removeItem('votacion_session');
+  showLogin();
+}
+
+/* ---------------------------- NAV ---------------------------- */
+
+function switchView(view){
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('main .view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+}
+
+/* ---------------------------- VOTACIÓN ---------------------------- */
+
+async function loadVotacion(){
+  const el = document.getElementById('lista-votacion');
+  const { data: proyectos, error } = await db
+    .from('proyectos_ley').select('*').order('created_at', { ascending: false });
+  if(error){ el.innerHTML = `<div class="msg error">${escapeHtml(friendlyError(error))}</div>`; return; }
+  if(!proyectos.length){ el.innerHTML = `<div class="empty"><h3>Sin proyectos registrados</h3><p>Aún no se ha ingresado ningún proyecto de ley.</p></div>`; return; }
+
+  let misVotos = {};
+  if(session.congresista_id){
+    const { data: votos } = await db.from('votos').select('*').eq('congresista_id', session.congresista_id);
+    (votos||[]).forEach(v => misVotos[v.proyecto_id] = v.voto);
+  }
+
+  el.innerHTML = '';
+  proyectos.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'doc';
+    const miVoto = misVotos[p.id];
+    let votosHtml = '';
+    if(p.estado === 'abierto' && session.congresista_id){
+      const opciones = p.tipo_voto === 'nominal' ? ['si','no','abstencion'] : ['si','no'];
+      const labels = { si:'Sí', no:'No', abstencion:'Me abstengo' };
+      votosHtml = `<div class="vote-row" data-proyecto="${p.id}" data-tipo="${p.tipo_voto}">` +
+        opciones.map(o => `<button class="vote-btn ${o} ${miVoto===o?'selected':''}" data-voto="${o}">${labels[o]}</button>`).join('') +
+        `</div>` +
+        (miVoto ? `<div class="current-vote">Tu voto registrado: <strong>${labels[miVoto]}</strong> — puedes cambiarlo mientras la votación siga abierta.</div>` : `<div class="current-vote">Aún no has votado en este proyecto.</div>`);
+    } else if(p.estado === 'abierto' && !session.congresista_id){
+      votosHtml = `<div class="current-vote">Tu cuenta no está asociada a un congresista, así que no puedes emitir voto.</div>`;
+    } else if(p.estado === 'cerrado' && miVoto){
+      const labels = { si:'Sí', no:'No', abstencion:'Me abstengo' };
+      votosHtml = `<div class="current-vote">Tu voto fue: <strong>${labels[miVoto]}</strong></div>`;
+    }
+    div.innerHTML = `
+      <div class="doc-head">
+        <div>
+          ${p.codigo ? `<div class="doc-code">${escapeHtml(p.codigo)}</div>` : ''}
+          <h3>${escapeHtml(p.titulo)}</h3>
+        </div>
+        <span class="badge ${p.estado}">${p.estado === 'abierto' ? 'Votación abierta' : p.estado === 'cerrado' ? 'Votación cerrada' : 'Borrador'}</span>
+      </div>
+      ${p.descripcion ? `<p class="doc-desc">${escapeHtml(p.descripcion)}</p>` : ''}
+      <div class="doc-meta"><span>Tipo de voto: ${p.tipo_voto === 'nominal' ? 'Nominal (sí / no / abstención)' : 'Estándar (sí / no)'}</span></div>
+      ${votosHtml}
+    `;
+    el.appendChild(div);
+  });
+
+  document.querySelectorAll('.vote-row').forEach(row => {
+    row.querySelectorAll('.vote-btn').forEach(btn => {
+      btn.addEventListener('click', () => emitirVoto(row.dataset.proyecto, btn.dataset.voto));
+    });
+  });
+}
+
+async function emitirVoto(proyectoId, voto){
+  const { error } = await db.rpc('fn_voto_emitir', {
+    p_username: session.username, p_password: session.password,
+    p_proyecto_id: proyectoId, p_voto: voto
+  });
+  if(error){
+    msgBox('votacion-msg', friendlyError(error), 'error');
+    return;
+  }
+  msgBox('votacion-msg', 'Voto registrado correctamente', 'ok');
+  loadVotacion();
+  loadResultados();
+}
+
+/* ---------------------------- RESULTADOS ---------------------------- */
+
+async function loadResultados(){
+  const el = document.getElementById('lista-resultados');
+  const { data: proyectos, error } = await db.from('proyectos_ley').select('*').order('created_at', { ascending: false });
+  if(error){ el.innerHTML = `<div class="msg error">${escapeHtml(friendlyError(error))}</div>`; return; }
+  if(!proyectos.length){ el.innerHTML = `<div class="empty"><h3>Sin resultados aún</h3></div>`; return; }
+
+  const { data: votos } = await db.from('votos').select('*, congresistas(nombre, partido_id, partidos(nombre,color))');
+  const { data: congresistas } = await db.from('congresistas').select('*, partidos(nombre,color)').eq('activo', true);
+  const totalCongresistas = (congresistas||[]).length;
+
+  el.innerHTML = '';
+  proyectos.forEach(p => {
+    const votosProyecto = (votos||[]).filter(v => v.proyecto_id === p.id);
+    const si = votosProyecto.filter(v=>v.voto==='si').length;
+    const no = votosProyecto.filter(v=>v.voto==='no').length;
+    const abst = votosProyecto.filter(v=>v.voto==='abstencion').length;
+    const total = si+no+abst;
+    const noVotaron = Math.max(totalCongresistas - total, 0);
+
+    const div = document.createElement('div');
+    div.className = 'doc';
+
+    let barHtml = '';
+    if(total > 0){
+      barHtml = `<div class="bar-outer">
+        ${si>0?`<div class="bar-seg si" style="width:${si/total*100}%"></div>`:''}
+        ${no>0?`<div class="bar-seg no" style="width:${no/total*100}%"></div>`:''}
+        ${abst>0?`<div class="bar-seg abstencion" style="width:${abst/total*100}%"></div>`:''}
+      </div>`;
+    }
+
+    // desglose por partido
+    let partidosMap = {};
+    votosProyecto.forEach(v => {
+      const c = v.congresistas;
+      const pn = (c && c.partidos && c.partidos.nombre) || 'Sin partido';
+      const color = (c && c.partidos && c.partidos.color) || '#999';
+      if(!partidosMap[pn]) partidosMap[pn] = { si:0, no:0, abstencion:0, color };
+      partidosMap[pn][v.voto]++;
+    });
+    let partidosHtml = Object.keys(partidosMap).sort().map(pn => {
+      const d = partidosMap[pn];
+      const t = d.si+d.no+d.abstencion;
+      return `<div class="party-row">
+        <span class="name"><span class="swatch" style="background:${d.color}"></span>${escapeHtml(pn)}</span>
+        <span class="mini-bar">
+          ${d.si>0?`<div class="bar-seg si" style="width:${d.si/t*100}%"></div>`:''}
+          ${d.no>0?`<div class="bar-seg no" style="width:${d.no/t*100}%"></div>`:''}
+          ${d.abstencion>0?`<div class="bar-seg abstencion" style="width:${d.abstencion/t*100}%"></div>`:''}
+        </span>
+        <span class="counts">${d.si} sí · ${d.no} no${p.tipo_voto==='nominal' ? ' · '+d.abstencion+' abst.' : ''}</span>
+      </div>`;
+    }).join('');
+
+    div.innerHTML = `
+      <div class="doc-head">
+        <div>
+          ${p.codigo ? `<div class="doc-code">${escapeHtml(p.codigo)}</div>` : ''}
+          <h3>${escapeHtml(p.titulo)}</h3>
+        </div>
+        <span class="badge ${p.estado}">${p.estado === 'abierto' ? 'Votación abierta' : p.estado === 'cerrado' ? 'Votación cerrada' : 'Borrador'}</span>
+      </div>
+      <div class="tally">
+        <div class="tally-item si"><span class="n">${si}</span><span class="lbl">Sí</span></div>
+        <div class="tally-item no"><span class="n">${no}</span><span class="lbl">No</span></div>
+        ${p.tipo_voto === 'nominal' ? `<div class="tally-item abstencion"><span class="n">${abst}</span><span class="lbl">Abstención</span></div>` : ''}
+      </div>
+      ${barHtml}
+      <div class="doc-meta"><span>${total} de ${totalCongresistas} congresistas votaron${noVotaron>0 ? ' · '+noVotaron+' pendientes' : ''}</span></div>
+      ${partidosHtml ? `<div class="section-title">Por partido</div>${partidosHtml}` : ''}
+    `;
+    el.appendChild(div);
+  });
+}
+
+/* ---------------------------- ADMIN: PROYECTOS ---------------------------- */
+
+async function loadAdminProyectos(){
+  const el = document.getElementById('admin-lista-proyectos');
+  const { data: proyectos, error } = await db.from('proyectos_ley').select('*').order('created_at', { ascending: false });
+  if(error){ el.innerHTML = `<div class="msg error">${escapeHtml(friendlyError(error))}</div>`; return; }
+  if(!proyectos.length){ el.innerHTML = `<div class="empty">No hay proyectos aún.</div>`; return; }
+  el.innerHTML = '';
+  proyectos.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'doc';
+    div.innerHTML = `
+      <div class="doc-head">
+        <div>
+          ${p.codigo ? `<div class="doc-code">${escapeHtml(p.codigo)}</div>` : ''}
+          <h3>${escapeHtml(p.titulo)}</h3>
+        </div>
+        <span class="badge ${p.estado}">${p.estado === 'abierto' ? 'Abierto' : p.estado === 'cerrado' ? 'Cerrado' : 'Borrador'}</span>
+      </div>
+      <div class="doc-meta"><span>Tipo: ${p.tipo_voto === 'nominal' ? 'Nominal' : 'Estándar'}</span></div>
+      <div class="btn-row">
+        ${p.estado !== 'abierto' && p.estado !== 'cerrado' ? `<button class="btn small" data-action="abrir" data-id="${p.id}">Abrir votación</button>` : ''}
+        ${p.estado === 'abierto' ? `<button class="btn small ghost" data-action="cerrar" data-id="${p.id}">Cerrar votación</button>` : ''}
+        ${p.estado === 'borrador' ? `<button class="btn small danger" data-action="eliminar" data-id="${p.id}">Eliminar</button>` : ''}
+      </div>
+    `;
+    el.appendChild(div);
+  });
+  el.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => handleProyectoAction(btn.dataset.action, btn.dataset.id));
+  });
+}
+
+async function handleProyectoAction(action, id){
+  const fn = action === 'abrir' ? 'fn_proyecto_abrir' : action === 'cerrar' ? 'fn_proyecto_cerrar' : 'fn_proyecto_eliminar';
+  if(action === 'eliminar' && !confirm('¿Eliminar este proyecto de ley? Esta acción no se puede deshacer.')) return;
+  const { error } = await db.rpc(fn, { p_username: session.username, p_password: session.password, p_id: id });
+  if(error){ msgBox('admin-proy-msg', friendlyError(error), 'error'); return; }
+  msgBox('admin-proy-msg', 'Proyecto actualizado', 'ok');
+  loadAdminProyectos(); loadVotacion(); loadResultados();
+}
+
+async function crearProyecto(){
+  const codigo = document.getElementById('np-codigo').value.trim();
+  const titulo = document.getElementById('np-titulo').value.trim();
+  const descripcion = document.getElementById('np-desc').value.trim();
+  const tipo_voto = document.getElementById('np-tipo').value;
+  if(!titulo){ msgBox('admin-proy-msg', 'El título es obligatorio', 'error'); return; }
+  const { error } = await db.rpc('fn_proyecto_crear', {
+    p_username: session.username, p_password: session.password,
+    p_codigo: codigo || null, p_titulo: titulo, p_descripcion: descripcion || null, p_tipo_voto: tipo_voto
+  });
+  if(error){ msgBox('admin-proy-msg', friendlyError(error), 'error'); return; }
+  document.getElementById('np-codigo').value = '';
+  document.getElementById('np-titulo').value = '';
+  document.getElementById('np-desc').value = '';
+  msgBox('admin-proy-msg', 'Proyecto de ley creado', 'ok');
+  loadAdminProyectos(); loadVotacion();
+}
+
+/* ---------------------------- ADMIN: PARTIDOS ---------------------------- */
+
+async function loadAdminPartidos(){
+  const { data: partidos, error } = await db.from('partidos').select('*').order('nombre');
+  const tbody = document.querySelector('#tabla-partidos tbody');
+  const selectCong = document.getElementById('cc-partido');
+  if(error){ tbody.innerHTML = `<tr><td colspan="3">${escapeHtml(friendlyError(error))}</td></tr>`; return; }
+  tbody.innerHTML = '';
+  selectCong.innerHTML = '<option value="">— Sin partido —</option>';
+  (partidos||[]).forEach(p => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.nombre)}</td>
+      <td>${escapeHtml(p.siglas||'—')}</td>
+      <td><button class="btn small danger" data-id="${p.id}">Eliminar</button></td>`;
+    tbody.appendChild(tr);
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = p.nombre;
+    selectCong.appendChild(opt);
+  });
+  tbody.querySelectorAll('button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => eliminarPartido(btn.dataset.id));
+  });
+}
+
+async function crearPartido(){
+  const nombre = document.getElementById('pp-nombre').value.trim();
+  const siglas = document.getElementById('pp-siglas').value.trim();
+  const color = document.getElementById('pp-color').value;
+  if(!nombre){ msgBox('admin-partidos-msg', 'El nombre es obligatorio', 'error'); return; }
+  const { error } = await db.rpc('fn_partido_crear', {
+    p_username: session.username, p_password: session.password,
+    p_nombre: nombre, p_siglas: siglas || null, p_color: color
+  });
+  if(error){ msgBox('admin-partidos-msg', friendlyError(error), 'error'); return; }
+  document.getElementById('pp-nombre').value = '';
+  document.getElementById('pp-siglas').value = '';
+  msgBox('admin-partidos-msg', 'Partido registrado', 'ok');
+  loadAdminPartidos();
+}
+
+async function eliminarPartido(id){
+  if(!confirm('¿Eliminar este partido? Los congresistas asociados quedarán sin partido.')) return;
+  const { error } = await db.rpc('fn_partido_eliminar', { p_username: session.username, p_password: session.password, p_id: id });
+  if(error){ msgBox('admin-partidos-msg', friendlyError(error), 'error'); return; }
+  msgBox('admin-partidos-msg', 'Partido eliminado', 'ok');
+  loadAdminPartidos(); loadAdminCongresistas();
+}
+
+/* ---------------------------- ADMIN: CONGRESISTAS ---------------------------- */
+
+async function loadAdminCongresistas(){
+  const { data: congresistas, error } = await db.from('congresistas').select('*, partidos(nombre,color)').order('nombre');
+  const tbody = document.querySelector('#tabla-congresistas tbody');
+  const selectUsuario = document.getElementById('uu-congresista');
+  if(error){ tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(friendlyError(error))}</td></tr>`; return; }
+  tbody.innerHTML = '';
+  selectUsuario.innerHTML = '<option value="">— Sin asociar (solo admin) —</option>';
+  (congresistas||[]).forEach(c => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(c.nombre)}</td>
+      <td>${c.partidos ? `<span class="swatch" style="background:${c.partidos.color}"></span>${escapeHtml(c.partidos.nombre)}` : '—'}</td>
+      <td>${c.activo ? 'Activo' : 'Inactivo'}</td>
+      <td><button class="btn small danger" data-id="${c.id}">Eliminar</button></td>`;
+    tbody.appendChild(tr);
+    const opt = document.createElement('option');
+    opt.value = c.id; opt.textContent = c.nombre;
+    selectUsuario.appendChild(opt);
+  });
+  tbody.querySelectorAll('button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => eliminarCongresista(btn.dataset.id));
+  });
+}
+
+async function crearCongresista(){
+  const nombre = document.getElementById('cc-nombre').value.trim();
+  const partido_id = document.getElementById('cc-partido').value || null;
+  if(!nombre){ msgBox('admin-congresistas-msg', 'El nombre es obligatorio', 'error'); return; }
+  const { error } = await db.rpc('fn_congresista_crear', {
+    p_username: session.username, p_password: session.password,
+    p_nombre: nombre, p_partido_id: partido_id
+  });
+  if(error){ msgBox('admin-congresistas-msg', friendlyError(error), 'error'); return; }
+  document.getElementById('cc-nombre').value = '';
+  msgBox('admin-congresistas-msg', 'Congresista registrado', 'ok');
+  loadAdminCongresistas();
+}
+
+async function eliminarCongresista(id){
+  if(!confirm('¿Eliminar este congresista? También se eliminará su usuario y sus votos.')) return;
+  const { error } = await db.rpc('fn_congresista_eliminar', { p_username: session.username, p_password: session.password, p_id: id });
+  if(error){ msgBox('admin-congresistas-msg', friendlyError(error), 'error'); return; }
+  msgBox('admin-congresistas-msg', 'Congresista eliminado', 'ok');
+  loadAdminCongresistas(); loadAdminUsuarios();
+}
+
+/* ---------------------------- ADMIN: USUARIOS ---------------------------- */
+
+async function loadAdminUsuarios(){
+  const { data, error } = await db.rpc('fn_usuarios_listar', { p_username: session.username, p_password: session.password });
+  const tbody = document.querySelector('#tabla-usuarios tbody');
+  if(error){ tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(friendlyError(error))}</td></tr>`; return; }
+  tbody.innerHTML = '';
+  (data||[]).forEach(u => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(u.username)}</td>
+      <td>${u.rol === 'admin' ? 'Administrador' : 'Congresista'}</td>
+      <td>${escapeHtml(u.congresista_nombre || '—')}</td>
+      <td><button class="btn small danger" data-id="${u.id}">Eliminar</button></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => eliminarUsuario(btn.dataset.id));
+  });
+}
+
+async function crearUsuario(){
+  const username = document.getElementById('uu-username').value.trim();
+  const password = document.getElementById('uu-password').value;
+  const congresista_id = document.getElementById('uu-congresista').value || null;
+  const rol = document.getElementById('uu-rol').value;
+  if(!username || !password){ msgBox('admin-usuarios-msg', 'Usuario y contraseña son obligatorios', 'error'); return; }
+  if(password.length < 8){ msgBox('admin-usuarios-msg', 'La contraseña debe tener al menos 8 caracteres', 'error'); return; }
+  const { error } = await db.rpc('fn_usuario_crear', {
+    p_username: session.username, p_password: session.password,
+    p_new_username: username, p_new_password: password,
+    p_congresista_id: congresista_id, p_rol: rol
+  });
+  if(error){ msgBox('admin-usuarios-msg', friendlyError(error), 'error'); return; }
+  document.getElementById('uu-username').value = '';
+  document.getElementById('uu-password').value = '';
+  msgBox('admin-usuarios-msg', 'Usuario creado', 'ok');
+  loadAdminUsuarios();
+}
+
+async function eliminarUsuario(id){
+  if(!confirm('¿Eliminar este usuario?')) return;
+  const { error } = await db.rpc('fn_usuario_eliminar', { p_username: session.username, p_password: session.password, p_id: id });
+  if(error){ msgBox('admin-usuarios-msg', friendlyError(error), 'error'); return; }
+  msgBox('admin-usuarios-msg', 'Usuario eliminado', 'ok');
+  loadAdminUsuarios();
+}
+
+/* ---------------------------- BINDINGS ---------------------------- */
+
+function bindEvents(){
+  document.getElementById('btn-login').addEventListener('click', doLogin);
+  document.getElementById('li-pass').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+  document.getElementById('btn-logout').addEventListener('click', doLogout);
+  document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+  document.getElementById('btn-crear-proyecto').addEventListener('click', crearProyecto);
+  document.getElementById('btn-crear-partido').addEventListener('click', crearPartido);
+  document.getElementById('btn-crear-congresista').addEventListener('click', crearCongresista);
+  document.getElementById('btn-crear-usuario').addEventListener('click', crearUsuario);
+}
+
+initApp();
+</script>
+</body>
+</html>
